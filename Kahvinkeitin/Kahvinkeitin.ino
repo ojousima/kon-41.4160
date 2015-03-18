@@ -28,7 +28,7 @@ Adafruit_ESP8266 wifi(&softser, &Serial, ESP_RST); //&Serial refers to hardware 
 #define CHANGE_RATE 1000L
 
 long CUP_CHECK_TIME = 0;
-long cups, input, time;
+long cups, time;
 int notAborted;
 char buffer[50];
 char data[10];
@@ -49,19 +49,10 @@ void setup()
   digitalWrite(PUMP, HIGH);
 }
 
- void loop()
+void loop()
 {
   Serial.print("Cups of coffee to make: ");
-  //cups = askNumberOfCups();
-  
-  //Katsotaan pitäisikö keittää kahvia
-  int check = requestCups();
-  
-  //Jos pitäisi, tallennetaan montako kuppia
-  if(check > 0) {
-      cups = check;
-  }
-
+  cups = askNumberOfCups();
   Serial.println(cups);
   if (cups >= 1 && cups <= 10) {
     pressPowerButton();
@@ -81,90 +72,117 @@ void setup()
   }
 }
 
-long requestCups(void){
+long askNumberOfCups()
+{
+  long input = 0;
+  //Pyöritetään tätä niin kauan, kun lokaalista sarjaportista TAI WiFi:ltä ei tule uutta käskyä.
+  while (Serial.available() == 0 && input == 0) {
+    // Jos kahvinkeittimen virtanappulaa painaa, kahvinkeitin menee manuaalimoodiin.
+    if (digitalRead(BUTTON) == HIGH) {
+      manualMode();
+    }
+    // Tarkistetaan, onko WiFi:llä uusia käskyjä.
+    input = requestCupsOverWiFi();
+  }
+  // Suoritetaan, mikäli lokaalista sarjaportista tuli uusi käsky, mutta WiFiltä ei.
+  while (Serial.available() > 0 && input == 0) {
+    input *= 10;
+    input += Serial.read() - '0';
+    delay(10);
+  }
+  return input;
+}
+
+long requestCupsOverWiFi(void){
   Fstr* COMMAND_URLS[1] = { F("/mepro/command_0001.json") };
   
-  long cups = 0;
+  long WiFicups = 0;
   
   //Jos ollaan tarkistettu kupit äskettäin, ei tarkisteta vielä.
   if(CUP_CHECK_TIME && ((millis() - CUP_CHECK_TIME) < CHECK_INTERVAL)){
-    return -1;
+    return 0;
   }
-  Serial.print("Checking cups");
+  
+  Serial.println("");
+  Serial.println("-- Checking cups over WiFi --");
   CUP_CHECK_TIME = millis();
   
    // Test if module is ready
-  Serial.print(F("Hard reset..."));
+  Serial.print(F("Hard reset... "));
   if(!wifi.hardReset()) {
     Serial.println(F("no response from module."));
     for(;;);
   }
   Serial.println(F("OK."));
 
-  Serial.print(F("Soft reset..."));
+  Serial.print(F("Soft reset... "));
   if(!wifi.softReset()) {
     Serial.println(F("no response from module."));
     for(;;);
   }
   Serial.println(F("OK."));
 
-  Serial.print(F("Checking firmware version..."));
+  Serial.print(F("Checking firmware version... "));
   wifi.println(F("AT+GMR"));
   if(wifi.readLine(buffer, sizeof(buffer))) {
     Serial.println(buffer);
     wifi.find(); // Discard the 'OK' that follows
-  } else {
-    Serial.println(F("error"));
+  }
+  else {
+    Serial.println(F("ERROR."));
   }
 
-  Serial.print(F("Connecting to WiFi..."));
+  Serial.print(F("Connecting to WiFi... "));
   if(wifi.connectToAP(F(ESP_SSID), F(ESP_PASS))) {
-
+    
     // IP addr check isn't part of library yet, but
     // we can manually request and place in a string.
-    Serial.print(F("OK\nChecking IP addr..."));
+    Serial.print(F("OK.\nChecking IP addr... "));
     wifi.println(F("AT+CIFSR"));
     if(wifi.readLine(buffer, sizeof(buffer))) {
       Serial.println(buffer);
       wifi.find(); // Discard the 'OK' that follows
 
-      Serial.print(F("Connecting to host..."));
+      Serial.print(F("Connecting to host... "));
       while(!wifi.connectTCP(F(HOST), PORT)) {}
-        Serial.print(F("OK\nRequesting page..."));
-        if(wifi.requestURL(COMMAND_URLS[0])) {
-          Serial.println("OK\nSearching for string...");
-          // Search for a phrase in the open stream.
-          // Must be a flash-resident string (F()).
-          if(wifi.find(F("AMNT:"), false)) { 
-            for(int ii=0; ii<10; ii++){
-              data[ii]=0x00;
-            }
-            int i = 0;
-
-            while(softser.peek()!='\n'){
-                data[i++] = softser.read();
-            }
-            cups=atoi(data);
-            Serial.print(F("Cups to make: "));
-            Serial.println(cups);
-          } else {
-            Serial.println(F("not found."));
-            cups = -1;
+      
+      Serial.print(F("OK.\nRequesting page... "));
+      if(wifi.requestURL(COMMAND_URLS[0])) {
+        Serial.println("OK.\nSearching for string... ");
+        // Search for a phrase in the open stream.
+        // Must be a flash-resident string (F()).
+        if (wifi.find(F("AMNT:"), false)) { 
+          for (int ii = 0; ii < 10; ii++) {
+            data[ii] = 0x00;
           }
-        } else { // URL request failed
-          Serial.println(F("URL request failed"));
+          int i = 0;
+          while (softser.peek() != '\n') {
+            data[i++] = softser.read();
+          }
+          WiFicups = atoi(data);
+          Serial.println(F("FOUND!"));
         }
-        wifi.closeTCP();
-    } else { // IP addr check failed
-      Serial.println(F("IP addr check failed"));
+        else { // Amount of cups not found
+          Serial.println(F("not found."));
+        }
+      }
+      else { // URL request failed
+        Serial.println(F("URL request FAILED."));
+      }
+      wifi.closeTCP();
+    }
+    else { // IP addr check failed
+      Serial.println(F("IP addr check FAILED."));
     }
     wifi.closeAP();
-  } else { // WiFi connection failed
-    Serial.println(F("Wifi connection FAILED"));
+  }
+  else { // WiFi connection failed
+    Serial.println(F("Wifi connection FAILED."));
   } 
   
-  return cups;
-  
+  Serial.println("-- WiFi check ended --");
+  Serial.print("Cups of coffee to make: ");
+  return WiFicups;
 }
 
 void manualMode()
