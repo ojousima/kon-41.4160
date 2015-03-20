@@ -8,13 +8,19 @@ AF_Stepper motor(200, 1); //Init stepper motor
 #define RELAY  33
 #define PUMP  35
 
+//ESP Debug, 0 for off, >0 for on
+#define WIFI_DEBUG 0
+
 //ESP Pin definitions
 #define ESP_RX   15
 #define ESP_TX   14
 #define ESP_RST  37
 
-Serial3(ESP_RX, ESP_TX); // INIT ESP
-Adafruit_ESP8266 wifi(&Serial3, &Serial, ESP_RST); //&Serial refers to hardware serial
+#if WIFI_DEBUG
+  Adafruit_ESP8266 wifi(&Serial3, &Serial, ESP_RST); //&Serial refers to hardware serial
+#else
+  Adafruit_ESP8266 wifi(&Serial3, 0, ESP_RST); //Debug data is directed to null
+#endif
 
 #define ESP_SSID "aalto open" // Your network name here
 #define ESP_PASS "" // Your network password here
@@ -29,8 +35,10 @@ Adafruit_ESP8266 wifi(&Serial3, &Serial, ESP_RST); //&Serial refers to hardware 
 long CUP_CHECK_TIME = 0;
 long cups, time;
 int notAborted;
-char buffer[50];
-char data[10];
+const uint8_t buffer_length = 50;
+char buffer[buffer_length];
+const uint8_t data_length = 10;
+char data[data_length];
 
 void setup()
 {
@@ -50,8 +58,9 @@ void setup()
 
 void loop()
 {
-  Serial.print("Cups of coffee to make: ");
+
   cups = askNumberOfCups();
+  Serial.print("Cups of coffee to make: ");
   Serial.println(cups);
   if (cups >= 1 && cups <= 10) {
     pressPowerButton();
@@ -107,20 +116,30 @@ long requestCupsOverWiFi(void){
   CUP_CHECK_TIME = millis();
   
    // Test if module is ready
-  Serial.print(F("Hard reset... "));
-  if(!wifi.hardReset()) {
-    Serial.println(F("no response from module."));
-    for(;;);
-  }
-  Serial.println(F("OK."));
 
-  Serial.print(F("Soft reset... "));
-  if(!wifi.softReset()) {
+  while(!wifi.hardReset()) {
+    #if WIFI_DEBUG
+    Serial.print(F("Hard reset... "));
     Serial.println(F("no response from module."));
-    for(;;);
+    #endif
   }
-  Serial.println(F("OK."));
+  #if WIFI_DEBUG
+  Serial.println(F("Hard reset OK."));
+  #endif
 
+
+  while(!wifi.softReset()) {
+    #if WIFI_DEBUG
+    Serial.print(F("Soft reset... "));
+    Serial.println(F("no response from module."));
+    #endif
+  }
+  #if WIFI_DEBUG
+  Serial.println(F("Soft reset OK."));
+  #endif
+
+  //Check firmware version only in debug mode
+  #if WIFI_DEBUG
   Serial.print(F("Checking firmware version... "));
   wifi.println(F("AT+GMR"));
   if(wifi.readLine(buffer, sizeof(buffer))) {
@@ -130,55 +149,95 @@ long requestCupsOverWiFi(void){
   else {
     Serial.println(F("ERROR."));
   }
-
+  #endif
+  
+  #if WIFI_DEBUG
   Serial.print(F("Connecting to WiFi... "));
-  if(wifi.connectToAP(F(ESP_SSID), F(ESP_PASS))) {
-    
-    // IP addr check isn't part of library yet, but
-    // we can manually request and place in a string.
-    Serial.print(F("OK.\nChecking IP addr... "));
-    wifi.println(F("AT+CIFSR"));
-    if(wifi.readLine(buffer, sizeof(buffer))) {
-      Serial.println(buffer);
-      wifi.find(); // Discard the 'OK' that follows
-
-      Serial.print(F("Connecting to host... "));
-      while(!wifi.connectTCP(F(HOST), PORT)) {}
-      
-      Serial.print(F("OK.\nRequesting page... "));
-      if(wifi.requestURL(COMMAND_URLS[0])) {
-        Serial.println("OK.\nSearching for string... ");
-        // Search for a phrase in the open stream.
-        // Must be a flash-resident string (F()).
-        if (wifi.find(F("AMNT:"), false)) { 
-          for (int ii = 0; ii < 10; ii++) {
-            data[ii] = 0x00;
-          }
-          int i = 0;
-          while (Serial3.peek() != '\n') {
-            data[i++] = Serial3.read();
-          }
-          WiFicups = atoi(data);
-          Serial.print(F("FOUND! "));
-          Serial.println(WiFicups);
-        }
-        else { // Amount of cups not found
-          Serial.println(F("not found."));
-        }
-      }
-      else { // URL request failed
-        Serial.println(F("URL request FAILED."));
-      }
-      wifi.closeTCP();
-    }
-    else { // IP addr check failed
-      Serial.println(F("IP addr check FAILED."));
-    }
-    wifi.closeAP();
+  #endif
+  while(!wifi.connectToAP(F(ESP_SSID), F(ESP_PASS))) {
+    #if WIFI_DEBUG
+    Serial.print(F("Retry connecting to WiFi... "));
+    #endif
   }
+  /*
   else { // WiFi connection failed
+    #if WIFI_DEBUG
     Serial.println(F("Wifi connection FAILED."));
-  } 
+    #endif
+  } */
+  
+  // IP addr check isn't part of library yet, but
+  // we can manually request and place in a string.
+  #if WIFI_DEBUG
+  Serial.print(F("OK.\nChecking IP addr... "));
+  #endif
+  wifi.println(F("AT+CIFSR"));
+  if(wifi.readLine(buffer, sizeof(buffer))) {
+    
+    #if WIFI_DEBUG
+    Serial.println(buffer);
+    #endif
+      
+    wifi.find(); // Discard the 'OK' that follows
+
+    #if WIFI_DEBUG
+    Serial.print(F("Connecting to host... "));
+    #endif
+    while(!wifi.connectTCP(F(HOST), PORT)) {}
+      
+    #if WIFI_DEBUG
+    Serial.print(F("OK.\nRequesting page... "));
+    #endif
+    if(wifi.requestURL(COMMAND_URLS[0])) {
+      Serial.println("OK.\nSearching for string... ");
+      // Search for a phrase in the open stream.
+      // Must be a flash-resident string (F()).
+      if (wifi.find(F("AMNT:"), true)) { 
+        for (int ii = 0; ii < data_length; ii++) {
+          data[ii] = 0x00;
+        }
+        int i = 0;
+        int counter = 0;
+        while ((Serial3.peek() != '\n')) {
+          while(Serial3.peek() == -1){
+            counter++;
+            if(counter<0) break; //Timeout after 30k loops
+          }
+          counter = 0; //reset timeout
+          data[i++] = Serial3.read();
+          if(i==data_length){ //watch the buffer
+           Serial.println("Buffer overflow");
+           break;
+          }
+        }
+        WiFicups = atoi(data);
+        #if WIFI_DEBUG
+        Serial.print(data);
+        Serial.print(F("FOUND! "));
+        Serial.println(WiFicups);
+        #endif
+      }
+      else { // Amount of cups not found
+        #if WIFI_DEBUG
+        Serial.println(F("not found."));
+        #endif
+      }
+    }
+    else { // URL request failed
+      #if WIFI_DEBUG
+      Serial.println(F("URL request FAILED."));
+      #endif
+    }
+    wifi.closeTCP();
+  }
+  else { // IP addr check failed
+    #if WIFI_DEBUG
+    Serial.println(F("IP addr check FAILED."));
+    #endif
+  }
+  
+  wifi.closeAP();
+
   
   Serial.println("-- WiFi check ended --");
   Serial.print("Cups of coffee to make: ");
