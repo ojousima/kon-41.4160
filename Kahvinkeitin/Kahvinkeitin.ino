@@ -1,22 +1,20 @@
-//#include <AFMotor.h>
+#include <AFMotor.h>
 #include <Adafruit_ESP8266.h>
-#include <SoftwareSerial.h>
 
-//AF_Stepper motor(200, 1); //Init stepper motor
+AF_Stepper motor(200, 1); //Init stepper motor
 
 //Coffee maker pin definitions
-/*#define BUTTON  31
+#define BUTTON  31
 #define RELAY  33
-#define PUMP  35*/
+#define PUMP  35
 
 //ESP Pin definitions
-#define ESP_TX   7
-#define ESP_RX   6
-#define ESP_RST  8
+#define ESP_RX   15
+#define ESP_TX   14
+#define ESP_RST  37
 
-
-SoftwareSerial softser(ESP_RX, ESP_TX); // INIT ESP
-Adafruit_ESP8266 wifi(&softser, &Serial, ESP_RST); //&Serial refers to hardware serial
+Serial3(ESP_RX, ESP_TX); // INIT ESP
+Adafruit_ESP8266 wifi(&Serial3, &Serial, ESP_RST); //&Serial refers to hardware serial
 
 #define ESP_SSID "aalto open" // Your network name here
 #define ESP_PASS "" // Your network password here
@@ -39,15 +37,15 @@ void setup()
   Serial.begin(57600); while(!Serial); // UART serial debug
 
   wifi.setBootMarker(F("Version:0.9.2.4]\r\n\r\nready")); //WiFi firmware version
-  softser.begin(9600); // Soft serial connection to ESP8266
+  Serial3.begin(9600); // Soft serial connection to ESP8266
 
   //Pump, relay setup
-  //motor.setSpeed(10);
-  //pinMode(BUTTON, INPUT);
-  //pinMode(RELAY, OUTPUT);
-  //digitalWrite(RELAY, HIGH);
-  //pinMode(PUMP, OUTPUT);
-  //digitalWrite(PUMP, HIGH);
+  motor.setSpeed(10);
+  pinMode(BUTTON, INPUT);
+  pinMode(RELAY, OUTPUT);
+  digitalWrite(RELAY, HIGH);
+  pinMode(PUMP, OUTPUT);
+  digitalWrite(PUMP, HIGH);
 }
 
 void loop()
@@ -56,16 +54,16 @@ void loop()
   cups = askNumberOfCups();
   Serial.println(cups);
   if (cups >= 1 && cups <= 10) {
-    //pressPowerButton();
-    //doseCoffeeGrounds(cups);
+    pressPowerButton();
+    doseCoffeeGrounds(cups);
     if (notAborted) {
- //     fillTank(cups);
+      fillTank(cups);
     }
     if (notAborted) {
-   //   waitThatCoffeeIsReady();
+      waitThatCoffeeIsReady();
     }
     if (notAborted) {
-    //  waitForAutoOff();
+      waitForAutoOff();
     }
   }
   else {
@@ -157,11 +155,12 @@ long requestCupsOverWiFi(void){
             data[ii] = 0x00;
           }
           int i = 0;
-          while (softser.peek() != '\n') {
-            data[i++] = softser.read();
+          while (Serial3.peek() != '\n') {
+            data[i++] = Serial3.read();
           }
           WiFicups = atoi(data);
-          Serial.println(F("FOUND!"));
+          Serial.print(F("FOUND! "));
+          Serial.println(WiFicups);
         }
         else { // Amount of cups not found
           Serial.println(F("not found."));
@@ -185,7 +184,7 @@ long requestCupsOverWiFi(void){
   Serial.print("Cups of coffee to make: ");
   return WiFicups;
 }
-/*
+
 void manualMode()
 {
   Serial.println("");
@@ -337,4 +336,4 @@ void waitForAutoOff()
   while(Serial.available() > 0) {
     Serial.read();
   }
-}*/
+}
