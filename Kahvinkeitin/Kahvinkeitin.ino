@@ -1,18 +1,19 @@
-#include <AFMotor.h>
+//#include <AFMotor.h>
 #include <Adafruit_ESP8266.h>
 #include <SoftwareSerial.h>
 
-AF_Stepper motor(200, 1); //Init stepper motor
+//AF_Stepper motor(200, 1); //Init stepper motor
 
 //Coffee maker pin definitions
-#define BUTTON  31
+/*#define BUTTON  31
 #define RELAY  33
-#define PUMP  35
+#define PUMP  35*/
 
 //ESP Pin definitions
-#define ESP_RX   15
-#define ESP_TX   14
-#define ESP_RST  37
+#define ESP_TX   7
+#define ESP_RX   6
+#define ESP_RST  8
+
 
 SoftwareSerial softser(ESP_RX, ESP_TX); // INIT ESP
 Adafruit_ESP8266 wifi(&softser, &Serial, ESP_RST); //&Serial refers to hardware serial
@@ -41,12 +42,12 @@ void setup()
   softser.begin(9600); // Soft serial connection to ESP8266
 
   //Pump, relay setup
-  motor.setSpeed(10);
-  pinMode(BUTTON, INPUT);
-  pinMode(RELAY, OUTPUT);
-  digitalWrite(RELAY, HIGH);
-  pinMode(PUMP, OUTPUT);
-  digitalWrite(PUMP, HIGH);
+  //motor.setSpeed(10);
+  //pinMode(BUTTON, INPUT);
+  //pinMode(RELAY, OUTPUT);
+  //digitalWrite(RELAY, HIGH);
+  //pinMode(PUMP, OUTPUT);
+  //digitalWrite(PUMP, HIGH);
 }
 
  void loop()
@@ -64,16 +65,16 @@ void setup()
 
   Serial.println(cups);
   if (cups >= 1 && cups <= 10) {
-    pressPowerButton();
-    doseCoffeeGrounds(cups);
+    //pressPowerButton();
+    //doseCoffeeGrounds(cups);
     if (notAborted) {
-      fillTank(cups);
+ //     fillTank(cups);
     }
     if (notAborted) {
-      waitThatCoffeeIsReady();
+   //   waitThatCoffeeIsReady();
     }
     if (notAborted) {
-      waitForAutoOff();
+    //  waitForAutoOff();
     }
   }
   else {
@@ -166,7 +167,7 @@ long requestCups(void){
   return cups;
   
 }
-
+/*
 void manualMode()
 {
   Serial.println("");
@@ -318,4 +319,4 @@ void waitForAutoOff()
   while(Serial.available() > 0) {
     Serial.read();
   }
-}
+}*/
