@@ -29,7 +29,7 @@ AF_Stepper motor(200, 1); //Init stepper motor
 #define PORT     80                 // 80 = HTTP default port
 
 //ESP Constant definitions
-#define CHECK_INTERVAL 1800000L      //Check every 30 minutes.
+#define CHECK_INTERVAL 300000L      //Check every 5 minutes.
 #define CHANGE_RATE 1000L
 
 long CUP_CHECK_TIME = 0;
@@ -58,9 +58,8 @@ void setup()
 
 void loop()
 {
-
-  cups = askNumberOfCups();
   Serial.print("Cups of coffee to make: ");
+  cups = askNumberOfCups();
   Serial.println(cups);
   if (cups >= 1 && cups <= 10) {
     pressPowerButton();
@@ -113,10 +112,9 @@ long requestCupsOverWiFi(void){
   
   Serial.println("");
   Serial.println("-- Checking cups over WiFi --");
-  CUP_CHECK_TIME = millis();
   
-   // Test if module is ready
-
+  // Test if module is ready
+  
   while(!wifi.hardReset()) {
     #if WIFI_DEBUG
     Serial.print(F("Hard reset... "));
@@ -126,8 +124,7 @@ long requestCupsOverWiFi(void){
   #if WIFI_DEBUG
   Serial.println(F("Hard reset OK."));
   #endif
-
-
+  
   while(!wifi.softReset()) {
     #if WIFI_DEBUG
     Serial.print(F("Soft reset... "));
@@ -142,29 +139,21 @@ long requestCupsOverWiFi(void){
   #if WIFI_DEBUG
   Serial.print(F("Checking firmware version... "));
   wifi.println(F("AT+GMR"));
-  if(wifi.readLine(buffer, sizeof(buffer))) {
+  if(!wifi.readLine(buffer, sizeof(buffer))) {
+    Serial.print(F("Error.\n"));
+  }
+  else {
     Serial.println(buffer);
     wifi.find(); // Discard the 'OK' that follows
   }
-  else {
-    Serial.println(F("ERROR."));
-  }
   #endif
   
-  #if WIFI_DEBUG
   Serial.print(F("Connecting to WiFi... "));
-  #endif
   while(!wifi.connectToAP(F(ESP_SSID), F(ESP_PASS))) {
     #if WIFI_DEBUG
-    Serial.print(F("Retry connecting to WiFi... "));
+    Serial.print(F("Connection timeout.\nRetry connecting to WiFi... "));
     #endif
   }
-  /*
-  else { // WiFi connection failed
-    #if WIFI_DEBUG
-    Serial.println(F("Wifi connection FAILED."));
-    #endif
-  } */
   
   // IP addr check isn't part of library yet, but
   // we can manually request and place in a string.
@@ -172,75 +161,65 @@ long requestCupsOverWiFi(void){
   Serial.print(F("OK.\nChecking IP addr... "));
   #endif
   wifi.println(F("AT+CIFSR"));
-  if(wifi.readLine(buffer, sizeof(buffer))) {
-    
+  if(!wifi.readLine(buffer, sizeof(buffer))) {
+    #if WIFI_DEBUG
+    Serial.print(F("Error.\n"));
+    #endif
+  }
+  else {
     #if WIFI_DEBUG
     Serial.println(buffer);
     #endif
-      
     wifi.find(); // Discard the 'OK' that follows
-
-    #if WIFI_DEBUG
-    Serial.print(F("Connecting to host... "));
-    #endif
-    while(!wifi.connectTCP(F(HOST), PORT)) {}
-      
-    #if WIFI_DEBUG
-    Serial.print(F("OK.\nRequesting page... "));
-    #endif
-    if(wifi.requestURL(COMMAND_URLS[0])) {
-      Serial.println("OK.\nSearching for string... ");
-      // Search for a phrase in the open stream.
-      // Must be a flash-resident string (F()).
-      if (wifi.find(F("AMNT:"), true)) { 
-        for (int ii = 0; ii < data_length; ii++) {
-          data[ii] = 0x00;
-        }
-        int i = 0;
-        int counter = 0;
-        while ((Serial3.peek() != '\n')) {
-          while(Serial3.peek() == -1){
-            counter++;
-            if(counter<0) break; //Timeout after 30k loops
-          }
-          counter = 0; //reset timeout
-          data[i++] = Serial3.read();
-          if(i==data_length){ //watch the buffer
-           Serial.println("Buffer overflow");
-           break;
-          }
-        }
-        WiFicups = atoi(data);
-        #if WIFI_DEBUG
-        Serial.print(data);
-        Serial.print(F("FOUND! "));
-        Serial.println(WiFicups);
-        #endif
-      }
-      else { // Amount of cups not found
-        #if WIFI_DEBUG
-        Serial.println(F("not found."));
-        #endif
-      }
-    }
-    else { // URL request failed
-      #if WIFI_DEBUG
-      Serial.println(F("URL request FAILED."));
-      #endif
-    }
-    wifi.closeTCP();
   }
-  else { // IP addr check failed
+  
+  Serial.print(F("OK.\nConnecting to host... "));
+  while(!wifi.connectTCP(F(HOST), PORT)) {
     #if WIFI_DEBUG
-    Serial.println(F("IP addr check FAILED."));
+    Serial.print(F("Connection timeout.\nRetry connecting to host... "));
+    #endif
+  }  
+  
+  Serial.print(F("OK.\nRequesting page... "));
+  while(!wifi.requestURL(COMMAND_URLS[0])) {
+    #if WIFI_DEBUG
+    Serial.print(F("Connection timeout.\nRetry requesting page... "));
     #endif
   }
   
-  wifi.closeAP();
-
+  Serial.print("OK.\nSearching for cups... ");
+  // Search for a phrase in the open stream.
+  // Must be a flash-resident string (F()).
+  if (wifi.find(F("AMNT:"), true)) { 
+    for (int ii = 0; ii < data_length; ii++) {
+      data[ii] = 0x00;
+    }
+    int i = 0;
+    int counter = 0;
+    while(Serial3.peek() != '\n') {
+      while(Serial3.peek() == -1) {
+        counter++;
+        if(counter<0) break; //Timeout after 30k loops
+      }
+      counter = 0; //reset timeout
+      data[i++] = Serial3.read();
+      if(i == data_length) { //watch the buffer
+        break;
+      }
+    }
+    WiFicups = atoi(data);
+    Serial.println(F("FOUND!"));
+  }
+  else { // Amount of cups not found
+    Serial.println(F("not found."));
+  }
+  
+  wifi.closeTCP();
+  CUP_CHECK_TIME = millis();
   
   Serial.println("-- WiFi check ended --");
   Serial.print("Cups of coffee to make: ");
+  
   return WiFicups;
 }
 
